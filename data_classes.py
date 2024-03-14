@@ -13,6 +13,8 @@ class PointCloud:
         :param points: <np.float: 4, n>. Input point cloud matrix.
         """
         self.points = points
+        # print("PC shape: ", self.points.shape)
+
         if self.points.shape[0] > 3:
             self.points = self.points[0:3, :]
 
@@ -98,6 +100,23 @@ class PointCloud:
         """
         self.points[:3, :] = transf_matrix.dot(
             np.vstack((self.points[:3, :], np.ones(self.nbr_points()))))[:3, :]
+
+    def inverse_transform(self, transf_matrix):
+        """
+        Applies the inverse of a homogeneous transform.
+        :param transf_matrix: <np.float: 4, 4>. Homogenous transformation matrix.
+        :return: <None>.
+        """
+        # 计算逆变换矩阵
+        inv_transf_matrix = np.linalg.inv(transf_matrix)
+        
+        # 应用逆变换矩阵
+        # 首先将点的坐标扩展到四维齐次坐标
+        homogeneous_points = np.vstack((self.points[:3, :], np.ones(self.nbr_points())))
+        # 然后通过逆变换矩阵应用逆变换
+        transformed_points = inv_transf_matrix.dot(homogeneous_points)
+        # 只取变换后的前三行，更新点的坐标
+        self.points[:3, :] = transformed_points[:3, :]
 
     @staticmethod
     def fromPytorch(cls, pytorchTensor):
@@ -215,6 +234,26 @@ class Box:
         self.orientation = self.orientation * Quaternion(matrix=transf_matrix[0:3, 0:3])
         self.velocity = np.dot(transf_matrix[0:3, 0:3], self.velocity)
 
+    def inverse_transform(self, transf_matrix):
+        # 逆旋转矩阵
+        inv_rot_matrix = np.linalg.inv(transf_matrix[0:3, 0:3])
+        
+        # 1. 逆变换速度
+        self.velocity = np.dot(inv_rot_matrix, self.velocity)
+        
+        # 2. 逆变换方向
+        inv_orientation = Quaternion(matrix=inv_rot_matrix)
+        self.orientation = inv_orientation * self.orientation
+        
+        # 3. 构建完整的逆变换矩阵
+        # Perform the inverse transformation
+        inv_transf_matrix = np.linalg.inv(transf_matrix)
+        transformed_center = np.dot(inv_transf_matrix, np.append(self.center, 1))
+        
+        # Now, transformed_center should have 4 elements, including the homogeneous coordinate
+        # Update self.center with the transformed position, normalized by the homogeneous coordinate
+        self.center = transformed_center[0:3] / transformed_center[3]
+        
     def corners(self, wlh_factor: float = 1.0):
         """
         Returns the bounding box corners.
